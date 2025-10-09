@@ -517,7 +517,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   Future<void> _initTts() async {
-    await _tts.setLanguage("en-US");
+    await _tts.setLanguage("en-IN");
     await _tts.setSpeechRate(0.5);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
