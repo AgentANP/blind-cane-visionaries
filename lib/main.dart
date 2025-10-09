@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:flutter_native_contact_picker/flutter_native_contact_picker.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,19 +36,19 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const ModernHomePage(),
+  home: const HomePage(),
     );
   }
 }
 
-class ModernHomePage extends StatefulWidget {
-  const ModernHomePage({super.key});
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  State<ModernHomePage> createState() => _ModernHomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _ModernHomePageState extends State<ModernHomePage> {
+class _HomePageState extends State<HomePage> {
   String _locationStatus = 'Press "Where Am I?" to get your current location.';
 
   Future<void> _findLocation() async {
@@ -132,7 +133,7 @@ class _ModernHomePageState extends State<ModernHomePage> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -189,8 +190,8 @@ class _ModernHomePageState extends State<ModernHomePage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              // Location Status Display
+              const Spacer(),
+              // Location Status Display, "Where Am I?" Button, "Start Navigation" Button at bottom
               Card(
                 color: Colors.grey[900],
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -204,7 +205,6 @@ class _ModernHomePageState extends State<ModernHomePage> {
                 ),
               ),
               const SizedBox(height: 16),
-              // "Where Am I?" Button
               ElevatedButton.icon(
                 icon: const Icon(Icons.location_on, size: 28),
                 label: const Text('WHERE AM I?'),
@@ -216,7 +216,6 @@ class _ModernHomePageState extends State<ModernHomePage> {
                 ),
               ),
               const SizedBox(height: 16),
-              // "Start Navigation" Button
               OutlinedButton.icon(
                 icon: const Icon(Icons.mic, size: 24),
                 label: const Text('START NAVIGATION'),
@@ -249,6 +248,22 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final FlutterNativeContactPicker _contactPicker = FlutterNativeContactPicker();
+  
+  Future<void> _pickContact() async {
+    try {
+      final contact = await _contactPicker.selectContact();
+      if (contact != null && contact.phoneNumbers != null && contact.phoneNumbers!.isNotEmpty) {
+        setState(() {
+          _nameController.text = contact.fullName ?? '';
+          _numberController.text = contact.phoneNumbers!.first;
+        });
+      }
+    } catch (e) {
+      // Handle error or permission denial
+    }
+  }
+  
   final List<Map<String, String>> _contacts = [];
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _numberController = TextEditingController();
@@ -335,6 +350,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: const Text('Add Contact'),
                         onPressed: _addContact,
                         style: ElevatedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.contacts),
+                        label: const Text('Pick from Contacts'),
+                        onPressed: _pickContact,
+                        style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
                         ),
                       ),
