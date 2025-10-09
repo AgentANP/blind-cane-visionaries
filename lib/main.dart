@@ -557,8 +557,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Future<List<PlaceSuggestion>> _fetchSuggestions(String query) async {
     if (query.length < 3) return [];
     
-    final String url = 
+    
+    String url = 
         'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$query&components=country:in&key=$_googleApiKey';
+    
+    
+    if (_currentPosition != null) {
+      final lat = _currentPosition!.latitude;
+      final lng = _currentPosition!.longitude;
+      url += '&location=$lat,$lng&radius=50000'; // 50km radius for biasing
+    }
     
     try {
       final response = await http.get(Uri.parse(url));
