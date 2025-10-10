@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -257,6 +258,74 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final FlutterNativeContactPicker _contactPicker = FlutterNativeContactPicker();
+  List<EmergencyContact> _savedContacts = [];
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _numberController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  // Load contacts from SharedPreferences
+  Future<void> _loadContacts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? contactsJson = prefs.getString('emergency_contacts');
+    
+    if (contactsJson != null) {
+      final List<dynamic> contactsList = json.decode(contactsJson);
+      setState(() {
+        _savedContacts = contactsList
+            .map((json) => EmergencyContact.fromJson(json))
+            .toList();
+      });
+    }
+  }
+
+  // Save contacts to SharedPreferences
+  Future<void> _saveContacts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String contactsJson = json.encode(
+      _savedContacts.map((contact) => contact.toJson()).toList(),
+    );
+    await prefs.setString('emergency_contacts', contactsJson);
+  }
+
+  // Add new contact
+  Future<void> _addContact() async {
+    if (_nameController.text.isNotEmpty && _numberController.text.isNotEmpty) {
+      setState(() {
+        _savedContacts.add(EmergencyContact(
+          name: _nameController.text,
+          phone: _numberController.text,
+        ));
+        _nameController.clear();
+        _numberController.clear();
+      });
+      await _saveContacts();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contact saved successfully')),
+        );
+      }
+    }
+  }
+
+  // Delete contact
+  Future<void> _deleteContact(int index) async {
+    setState(() {
+      _savedContacts.removeAt(index);
+    });
+    await _saveContacts();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Contact deleted')),
+      );
+    }
+  }
   
   Future<void> _pickContact() async {
     try {
@@ -271,28 +340,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Handle error or permission denial
     }
   }
-  
-  final List<Map<String, String>> _contacts = [];
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _numberController = TextEditingController();
 
-  void _addContact() {
-    if (_nameController.text.isNotEmpty && _numberController.text.isNotEmpty) {
-      setState(() {
-        _contacts.add({
-          'name': _nameController.text,
-          'number': _numberController.text,
-        });
-        _nameController.clear();
-        _numberController.clear();
-      });
-    }
-  }
-
-  void _removeContact(int index) {
-    setState(() {
-      _contacts.removeAt(index);
-    });
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _numberController.dispose();
+    super.dispose();
   }
 
   @override
@@ -389,11 +442,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Emergency Contacts (${_contacts.length})',
+                      'Emergency Contacts (${_savedContacts.length})',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
-                    _contacts.isEmpty
+                    _savedContacts.isEmpty
                         ? const Padding(
                             padding: EdgeInsets.symmetric(vertical: 16.0),
                             child: Text(
@@ -404,19 +457,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         : ListView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _contacts.length,
+                            itemCount: _savedContacts.length,
                             itemBuilder: (context, index) {
-                              final contact = _contacts[index];
+                              final contact = _savedContacts[index];
                               return Card(
                                 color: Colors.grey[850],
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
                                   leading: const Icon(Icons.person, color: Colors.tealAccent),
-                                  title: Text(contact['name'] ?? ''),
-                                  subtitle: Text(contact['number'] ?? ''),
+                                  title: Text(contact.name),
+                                  subtitle: Text(contact.phone),
                                   trailing: IconButton(
                                     icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                    onPressed: () => _removeContact(index),
+                                    onPressed: () => _deleteContact(index),
                                     tooltip: 'Delete Contact',
                                   ),
                                 ),
@@ -1114,4 +1167,28 @@ class PlaceSuggestion {
   final String description;
 
   PlaceSuggestion({required this.placeId, required this.description});
+}
+
+// Emergency Contact Model
+class EmergencyContact {
+  final String name;
+  final String phone;
+
+  EmergencyContact({required this.name, required this.phone});
+
+  // Convert to JSON for storage
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'phone': phone,
+    };
+  }
+
+  // Create from JSON
+  factory EmergencyContact.fromJson(Map<String, dynamic> json) {
+    return EmergencyContact(
+      name: json['name'] ?? '',
+      phone: json['phone'] ?? '',
+    );
+  }
 }
