@@ -440,7 +440,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Smart Stick Assistant'),
-        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         elevation: 0,
         actions: [
           IconButton(
@@ -898,8 +898,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   Position? _currentPosition;
   final FlutterTts _tts = FlutterTts();
   final TextEditingController _searchController = TextEditingController();
-  Set<Marker> _markers = {};
-  Set<Polyline> _polylines = {};
+  final Set<Marker> _markers = {};
+  final Set<Polyline> _polylines = {};
   bool _isNavigating = false;
   
   // Navigation state
@@ -1363,7 +1363,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Navigation'),
-        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         elevation: 0,
       ),
       body: _currentPosition == null
@@ -1513,7 +1513,7 @@ class BluetoothScreen extends StatefulWidget {
 }
 
 class _BluetoothScreenState extends State<BluetoothScreen> {
-  List<ScanResult> _scanResults = [];
+  final List<ScanResult> _scanResults = [];
   bool _isScanning = false;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   final FlutterTts _tts = FlutterTts();
@@ -1789,7 +1789,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Connect to Stick'),
-        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       body: SafeArea(
         child: Padding(
