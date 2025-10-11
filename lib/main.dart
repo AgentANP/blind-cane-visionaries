@@ -1513,7 +1513,7 @@ class BluetoothScreen extends StatefulWidget {
 }
 
 class _BluetoothScreenState extends State<BluetoothScreen> {
-  List<BluetoothDevice> _scanResults = [];
+  List<ScanResult> _scanResults = [];
   bool _isScanning = false;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   final FlutterTts _tts = FlutterTts();
@@ -1564,6 +1564,50 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     }
   }
 
+  // Filter function to identify potential stick devices
+  bool _isPotentialStickDevice(ScanResult result) {
+    String platformName = result.device.platformName.toLowerCase();
+    String advName = result.advertisementData.advName.toLowerCase();
+    String localName = result.advertisementData.localName.toLowerCase();
+    
+    // Check if any name contains keywords related to the stick
+    List<String> stickKeywords = [
+      'stick',
+      'esp32',
+      'smart stick',
+      'blind',
+      'cane',
+      'assistant'
+    ];
+    
+    for (String keyword in stickKeywords) {
+      if (platformName.contains(keyword) || 
+          advName.contains(keyword) || 
+          localName.contains(keyword)) {
+        return true;
+      }
+    }
+    
+    // Also check for strong signal (device is very close, likely in hand)
+    // RSSI closer to 0 means stronger signal
+    // -50 to -30 is very close (within 1-2 meters)
+    if (result.rssi > -50) {
+      print('Device has strong signal (${result.rssi} dBm), might be the stick');
+      return true;
+    }
+    
+    // For now during testing, show all devices with some filtering
+    // Filter out very weak signals (far away devices)
+    if (result.rssi < -90) {
+      print('Device signal too weak (${result.rssi} dBm), filtering out');
+      return false;
+    }
+    
+    // If no specific match but signal is decent, show it
+    // This helps during initial setup when you might not know the device name
+    return true;
+  }
+
   Future<void> _startScan() async {
     if (_isScanning) return;
     
@@ -1572,6 +1616,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
       _scanResults.clear();
     });
     
+    print('Starting Bluetooth scan...');
     await _speak('Scanning for stick devices');
     
     try {
@@ -1581,19 +1626,46 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
       // Start scanning first
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 15),
+        // Optional: filter by specific services if ESP32 advertises them
+        // withServices: [Guid("your-service-uuid-here")],
       );
+      
+      print('Scan started, listening for results...');
       
       // Listen to scan results stream
       _scanSubscription = FlutterBluePlus.scanResults.listen(
         (results) {
           if (!mounted) return;
           
+          print('Scan results received: ${results.length} devices');
+          
           for (ScanResult result in results) {
+            // Filter: Only add devices that might be the stick
+            // Check if it's likely our ESP32 stick
+            bool isPotentialStick = _isPotentialStickDevice(result);
+            
+            if (!isPotentialStick) {
+              // Skip devices that don't match our criteria
+              continue;
+            }
+            
             // Add device if not already in list
-            if (!_scanResults.any((d) => d.remoteId == result.device.remoteId)) {
+            if (!_scanResults.any((d) => d.device.remoteId == result.device.remoteId)) {
+              String deviceName = result.device.platformName;
+              String advertisedName = result.advertisementData.advName;
+              String localName = result.advertisementData.localName;
+              
+              print('Adding device:');
+              print('  Platform Name: $deviceName');
+              print('  Advertised Name: $advertisedName');
+              print('  Local Name: $localName');
+              print('  Remote ID: ${result.device.remoteId}');
+              print('  RSSI: ${result.rssi}');
+              
               setState(() {
-                _scanResults.add(result.device);
+                _scanResults.add(result);
               });
+              print('Total devices in list: ${_scanResults.length}');
             }
           }
         },
@@ -1605,8 +1677,12 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
       // Wait for scan to complete
       await Future.delayed(const Duration(seconds: 15));
       
+      print('Scan timeout reached');
+      
       // Stop scanning
       await FlutterBluePlus.stopScan();
+      
+      print('Scan stopped. Total devices found: ${_scanResults.length}');
       
       if (mounted) {
         setState(() {
@@ -1686,8 +1762,9 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     }
   }
 
-  Future<void> _connectToDevice(BluetoothDevice device) async {
-    await _speak('Connecting to ${device.platformName}');
+  Future<void> _connectToDevice(ScanResult scanResult) async {
+    BluetoothDevice device = scanResult.device;
+    await _speak('Connecting to ${device.platformName.isEmpty ? "device" : device.platformName}');
     
     try {
       await widget.onDeviceConnected(device);
@@ -1814,41 +1891,79 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                     : ListView.builder(
                         itemCount: _scanResults.length,
                         itemBuilder: (context, index) {
-                          final device = _scanResults[index];
-                          final deviceName = device.platformName.isEmpty 
-                              ? 'Unknown Device' 
-                              : device.platformName;
+                          final scanResult = _scanResults[index];
+                          final device = scanResult.device;
+                          
+                          // Try to get the best available name
+                          String deviceName = 'Unknown Device';
+                          if (scanResult.advertisementData.advName.isNotEmpty) {
+                            deviceName = scanResult.advertisementData.advName;
+                          } else if (scanResult.advertisementData.localName.isNotEmpty) {
+                            deviceName = scanResult.advertisementData.localName;
+                          } else if (device.platformName.isNotEmpty) {
+                            deviceName = device.platformName;
+                          }
+                          
+                          print('Rendering device $index: $deviceName');
                           
                           return Card(
                             color: Colors.grey[850],
                             margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              leading: const Icon(
-                                Icons.bluetooth,
-                                color: Colors.blue,
-                                size: 32,
-                              ),
-                              title: Text(
-                                deviceName,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                            child: InkWell(
+                              onTap: () => _connectToDevice(scanResult),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.bluetooth,
+                                      color: Colors.blue,
+                                      size: 40,
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            deviceName,
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            device.remoteId.toString(),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[400],
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (scanResult.rssi != 0) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Signal: ${scanResult.rssi} dBm',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey[500],
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Icon(
+                                      Icons.arrow_forward_ios,
+                                      color: Colors.green,
+                                      size: 24,
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              subtitle: Text(
-                                device.remoteId.toString(),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[400],
-                                ),
-                              ),
-                              trailing: ElevatedButton(
-                                onPressed: () => _connectToDevice(device),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Connect'),
                               ),
                             ),
                           );
