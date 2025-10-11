@@ -7,6 +7,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -57,10 +58,106 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _locationStatus = 'Press "Where Am I?" to get your current location.';
+  final FlutterTts _tts = FlutterTts();
+  bool _isTtsInitialized = false;
+  
+  // Bluetooth state
+  BluetoothDevice? _connectedDevice;
+  String _connectionStatus = 'Disconnected: Standby';
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initTts();
+    _loadSavedDevice();
+  }
+
+  Future<void> _initTts() async {
+    try {
+      // Stop any ongoing speech first
+      await _tts.stop();
+      
+      // Set Indian English voice
+      await _tts.setLanguage("en-IN");
+      await _tts.setSpeechRate(0.5);
+      await _tts.setVolume(1.0);
+      await _tts.setPitch(1.0);
+      
+      // Wait a bit for settings to take effect
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      setState(() {
+        _isTtsInitialized = true;
+      });
+      
+      print('TTS initialized successfully with en-IN');
+    } catch (e) {
+      print('TTS initialization error: $e');
+      _isTtsInitialized = false;
+    }
+  }
+
+  Future<void> _speak(String text) async {
+    try {
+      // If TTS not initialized, wait for it
+      if (!_isTtsInitialized) {
+        print('TTS not initialized, waiting...');
+        await _initTts();
+        
+        // If still not initialized after retry, skip speech
+        if (!_isTtsInitialized) {
+          print('TTS initialization failed, skipping speech');
+          return;
+        }
+      }
+
+      // Re-confirm language setting before speaking
+      await _tts.setLanguage("en-IN");
+      
+      // Create a completer to wait for speech completion
+      final completer = Completer<void>();
+      
+      // Set up completion handler
+      _tts.setCompletionHandler(() {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      });
+      
+      // Set up error handler
+      _tts.setErrorHandler((msg) {
+        print('TTS error: $msg');
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      });
+      
+      print('Speaking: $text');
+      // Start speaking
+      await _tts.speak(text);
+      
+      // Wait for completion with timeout to prevent hanging
+      await completer.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          print('TTS timeout');
+        },
+      );
+    } catch (e) {
+      print('Speech error: $e');
+      // If speech fails, continue silently
+    }
+  }
 
   Future<void> _findLocation() async {
     setState(() {
       _locationStatus = 'Getting location...';
+    });
+    
+    // Announce that location is being fetched (non-blocking)
+    _speak('Getting your location').then((_) {
+      print('Location announcement completed');
     });
 
     bool serviceEnabled;
@@ -72,6 +169,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _locationStatus = 'Location services are disabled.';
       });
+      await _speak('Location services are disabled. Please enable location services.');
       return;
     }
 
@@ -83,6 +181,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _locationStatus = 'Location permissions are denied.';
         });
+        await _speak('Location permissions are denied. Please grant location permission.');
         return;
       }
     }
@@ -91,14 +190,18 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _locationStatus = 'Location permissions are permanently denied.';
       });
+      await _speak('Location permissions are permanently denied. Please enable them in settings.');
       return;
     }
 
     // Get current position
     try {
+      print('Fetching current position...');
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+      
+      print('Position fetched: ${position.latitude}, ${position.longitude}');
 
       // Get address from coordinates
       List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -113,11 +216,223 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _locationStatus = 'Your location:\n$address';
       });
+      
+      print('Address resolved: $address');
+      
+      // Announce the location
+      print('About to announce location...');
+      await _speak('You are currently at $address');
+      print('Location announcement completed');
     } catch (e) {
+      print('Location fetch error: $e');
       setState(() {
         _locationStatus = 'Failed to get location: $e';
       });
+      await _speak('Failed to get your location. Please try again.');
     }
+  }
+
+  // Load saved Bluetooth device
+  Future<void> _loadSavedDevice() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final deviceId = prefs.getString('connected_device_id');
+      
+      if (deviceId != null) {
+        // Try to reconnect to saved device
+        setState(() {
+          _connectionStatus = 'Reconnecting...';
+        });
+        
+        // Check if device is available
+        final connectedDevices = await FlutterBluePlus.connectedSystemDevices;
+        for (var device in connectedDevices) {
+          if (device.remoteId.toString() == deviceId) {
+            await _connectToDevice(device);
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // Failed to load saved device
+    }
+  }
+
+  // Connect to Bluetooth device
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    try {
+      await device.connect(timeout: const Duration(seconds: 15));
+      
+      setState(() {
+        _connectedDevice = device;
+        _connectionStatus = 'Connected: ${device.platformName}';
+      });
+      
+      // Save device ID
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('connected_device_id', device.remoteId.toString());
+      
+      // Listen to connection state changes
+      _connectionStateSubscription?.cancel();
+      _connectionStateSubscription = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          setState(() {
+            _connectedDevice = null;
+            _connectionStatus = 'Disconnected: Standby';
+          });
+        }
+      });
+      
+      // Discover services and set up listeners for SOS signals
+      await _setupSignalListeners(device);
+      
+      await _speak('Connected to stick');
+    } catch (e) {
+      setState(() {
+        _connectionStatus = 'Connection failed';
+      });
+      await _speak('Failed to connect to stick');
+    }
+  }
+
+  // Set up listeners for signals from the stick (like SOS button)
+  Future<void> _setupSignalListeners(BluetoothDevice device) async {
+    try {
+      // Discover all services
+      List<BluetoothService> services = await device.discoverServices();
+      
+      // Look for characteristics that can notify
+      for (BluetoothService service in services) {
+        for (BluetoothCharacteristic characteristic in service.characteristics) {
+          // Check if characteristic supports notifications
+          if (characteristic.properties.notify || characteristic.properties.indicate) {
+            // Subscribe to notifications
+            await characteristic.setNotifyValue(true);
+            
+            // Listen for data from the stick
+            characteristic.lastValueStream.listen((value) async {
+              if (value.isNotEmpty) {
+                String receivedData = String.fromCharCodes(value);
+                
+                // Handle SOS button press
+                if (receivedData.toUpperCase().contains('SOS')) {
+                  await _handleSOSSignal();
+                }
+                
+                // You can add more signal handlers here for other stick functions
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Service discovery failed, but connection is still active
+    }
+  }
+
+  // Handle SOS signal from the stick
+  Future<void> _handleSOSSignal() async {
+    // Announce emergency
+    await _speak('Emergency SOS button pressed on stick');
+    
+    // Get current location
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      
+      String address = 'Unknown location';
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        address = '${place.street}, ${place.locality}, ${place.administrativeArea}';
+      }
+      
+      // Show emergency dialog
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            backgroundColor: Colors.red[900],
+            title: Row(
+              children: const [
+                Icon(Icons.warning, color: Colors.white, size: 32),
+                SizedBox(width: 12),
+                Text('EMERGENCY SOS', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'SOS button pressed on Smart Stick!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Location: $address',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Coordinates: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text(
+                  'I\'m Safe',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  // TODO: Send SMS/call emergency contacts with location
+                  await _speak('Alerting emergency contacts');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red[900],
+                ),
+                child: const Text(
+                  'Alert Contacts',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      // Failed to get location for SOS
+      await _speak('Emergency signal received but location unavailable');
+    }
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    _connectionStateSubscription?.cancel();
+    _connectedDevice?.disconnect();
+    super.dispose();
   }
 
   @override
@@ -146,31 +461,50 @@ class _HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Bluetooth Status Card at the top
-              Card(
-                color: Colors.grey[900],
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.bluetooth_disabled, color: Colors.redAccent, size: 32),
-                      SizedBox(width: 12),
-                      Flexible(
-                        child: Text(
-                          'Disconnected: Standby',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.redAccent,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) => BluetoothScreen(
+                      onDeviceConnected: _connectToDevice,
+                    )),
+                  );
+                },
+                child: Card(
+                  color: Colors.grey[900],
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _connectedDevice != null 
+                            ? Icons.bluetooth_connected 
+                            : Icons.bluetooth_disabled, 
+                          color: _connectedDevice != null 
+                            ? Colors.greenAccent 
+                            : Colors.redAccent, 
+                          size: 32
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            _connectionStatus,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: _connectedDevice != null 
+                                ? Colors.greenAccent 
+                                : Colors.redAccent,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -226,7 +560,13 @@ class _HomePageState extends State<HomePage> {
               OutlinedButton.icon(
                 icon: const Icon(Icons.mic, size: 24),
                 label: const Text('START NAVIGATION'),
-                onPressed: () {
+                onPressed: () async {
+                  // Announce navigation screen opening
+                  await _speak('Opening navigation. Enter your destination to start.');
+                  
+                  // Check if widget is still mounted before using context
+                  if (!mounted) return;
+                  
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (context) => const NavigationScreen()),
                   );
@@ -1158,6 +1498,367 @@ class _NavigationScreenState extends State<NavigationScreen> {
                   ),
               ],
             ),
+    );
+  }
+}
+
+// Bluetooth Connection Screen
+class BluetoothScreen extends StatefulWidget {
+  final Function(BluetoothDevice) onDeviceConnected;
+  
+  const BluetoothScreen({super.key, required this.onDeviceConnected});
+
+  @override
+  State<BluetoothScreen> createState() => _BluetoothScreenState();
+}
+
+class _BluetoothScreenState extends State<BluetoothScreen> {
+  List<BluetoothDevice> _scanResults = [];
+  bool _isScanning = false;
+  StreamSubscription<List<ScanResult>>? _scanSubscription;
+  final FlutterTts _tts = FlutterTts();
+
+  @override
+  void initState() {
+    super.initState();
+    _initTts();
+    _checkBluetoothSupport();
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setLanguage("en-IN");
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
+  }
+
+  Future<void> _speak(String text) async {
+    final completer = Completer<void>();
+    _tts.setCompletionHandler(() {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    await _tts.speak(text);
+    await completer.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {},
+    );
+  }
+
+  Future<void> _checkBluetoothSupport() async {
+    try {
+      // Check if Bluetooth is supported
+      bool isSupported = await FlutterBluePlus.isSupported;
+      if (!isSupported) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bluetooth is not supported on this device'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      // Bluetooth check failed, assume supported
+      print('Bluetooth support check error: $e');
+    }
+  }
+
+  Future<void> _startScan() async {
+    if (_isScanning) return;
+    
+    setState(() {
+      _isScanning = true;
+      _scanResults.clear();
+    });
+    
+    await _speak('Scanning for stick devices');
+    
+    try {
+      // Cancel any existing subscription
+      await _scanSubscription?.cancel();
+      
+      // Start scanning first
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 15),
+      );
+      
+      // Listen to scan results stream
+      _scanSubscription = FlutterBluePlus.scanResults.listen(
+        (results) {
+          if (!mounted) return;
+          
+          for (ScanResult result in results) {
+            // Add device if not already in list
+            if (!_scanResults.any((d) => d.remoteId == result.device.remoteId)) {
+              setState(() {
+                _scanResults.add(result.device);
+              });
+            }
+          }
+        },
+        onError: (error) {
+          print('Scan stream error: $error');
+        },
+      );
+      
+      // Wait for scan to complete
+      await Future.delayed(const Duration(seconds: 15));
+      
+      // Stop scanning
+      await FlutterBluePlus.stopScan();
+      
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+        
+        if (_scanResults.isEmpty) {
+          await _speak('No devices found. Make sure the stick is turned on and Bluetooth is enabled.');
+        } else {
+          await _speak('Found ${_scanResults.length} devices');
+        }
+      }
+    } catch (e) {
+      print('Scan error: $e');
+      
+      // Stop scanning on error
+      try {
+        await FlutterBluePlus.stopScan();
+      } catch (_) {}
+      
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
+      
+      // Provide more specific error message
+      String errorMsg = 'Scan failed. ';
+      String voiceMsg = 'Scan failed. ';
+      
+      String errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('permission')) {
+        errorMsg += 'Please grant Bluetooth and location permissions in settings.';
+        voiceMsg += 'Please grant Bluetooth and location permissions.';
+      } else if (errorStr.contains('bluetooth') || errorStr.contains('adapter')) {
+        errorMsg += 'Please turn on Bluetooth and try again.';
+        voiceMsg += 'Please turn on Bluetooth.';
+      } else if (errorStr.contains('location')) {
+        errorMsg += 'Please enable location services in settings.';
+        voiceMsg += 'Please enable location services.';
+      } else {
+        errorMsg += 'Please ensure Bluetooth is on, location is enabled, and permissions are granted. Error: ${e.toString()}';
+        voiceMsg += 'Please check Bluetooth and location settings.';
+      }
+      
+      await _speak(voiceMsg);
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _stopScan() async {
+    try {
+      await FlutterBluePlus.stopScan();
+      await _scanSubscription?.cancel();
+      
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+        await _speak('Search cancelled');
+      }
+    } catch (e) {
+      print('Error stopping scan: $e');
+    }
+  }
+
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    await _speak('Connecting to ${device.platformName}');
+    
+    try {
+      await widget.onDeviceConnected(device);
+      
+      if (!mounted) return;
+      
+      Navigator.of(context).pop();
+    } catch (e) {
+      await _speak('Connection failed');
+    }
+  }
+
+  @override
+  void dispose() {
+    _scanSubscription?.cancel();
+    _tts.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Connect to Stick'),
+        backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Instructions Card
+              Card(
+                color: Colors.grey[900],
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    children: const [
+                      Icon(Icons.bluetooth_searching, size: 48, color: Colors.blue),
+                      SizedBox(height: 16),
+                      Text(
+                        'Make sure your Smart Stick is turned on and in range.',
+                        style: TextStyle(fontSize: 18),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Note: Bluetooth and location permissions are required for device scanning.',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Scan Button or Cancel Button
+              _isScanning
+                  ? Column(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: null,
+                          icon: const Icon(Icons.hourglass_empty),
+                          label: const Text('Scanning...'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.blue[700],
+                            disabledForegroundColor: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _stopScan,
+                          icon: const Icon(Icons.cancel),
+                          label: const Text('Cancel Search'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: const BorderSide(color: Colors.redAccent),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: _startScan,
+                      icon: const Icon(Icons.search),
+                      label: const Text('Scan for Devices'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+              
+              const SizedBox(height: 24),
+              
+              // Device List
+              Expanded(
+                child: _scanResults.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.bluetooth,
+                              size: 64,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _isScanning 
+                                ? 'Searching for devices...' 
+                                : 'Tap "Scan for Devices" to start',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[400],
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _scanResults.length,
+                        itemBuilder: (context, index) {
+                          final device = _scanResults[index];
+                          final deviceName = device.platformName.isEmpty 
+                              ? 'Unknown Device' 
+                              : device.platformName;
+                          
+                          return Card(
+                            color: Colors.grey[850],
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.bluetooth,
+                                color: Colors.blue,
+                                size: 32,
+                              ),
+                              title: Text(
+                                deviceName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Text(
+                                device.remoteId.toString(),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[400],
+                                ),
+                              ),
+                              trailing: ElevatedButton(
+                                onPressed: () => _connectToDevice(device),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Connect'),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,1 +1,6 @@
 include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Disable print warning - useful for debugging during development
+    avoid_print: false
