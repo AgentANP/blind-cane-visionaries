@@ -74,23 +74,50 @@ class _HomePageState extends State<HomePage> {
         });
         
         // Check if device is available (systemDevices requires service UUIDs, empty list gets all)
-        final connectedDevices = await FlutterBluePlus.systemDevices([]);
-        for (var device in connectedDevices) {
-          if (device.remoteId.toString() == deviceId) {
-            await _connectToDevice(device);
-            return;
+        try {
+          final connectedDevices = await FlutterBluePlus.systemDevices([]);
+          bool deviceFound = false;
+          
+          for (var device in connectedDevices) {
+            if (device.remoteId.toString() == deviceId) {
+              deviceFound = true;
+              await _connectToDevice(device);
+              return;
+            }
           }
+          
+          // Device not found in system devices
+          if (!deviceFound) {
+            setState(() {
+              _connectionStatus = 'Device not found. Tap "Connect Device" to reconnect.';
+            });
+            await _ttsService.speak('Saved device not found. Please connect manually.');
+          }
+        } catch (e) {
+          // Error checking system devices
+          setState(() {
+            _connectionStatus = 'Reconnection failed. Tap "Connect Device" to try again.';
+          });
+          await _ttsService.speak('Could not reconnect to device.');
         }
+      } else {
+        // No saved device
+        setState(() {
+          _connectionStatus = 'Disconnected: Standby';
+        });
       }
     } catch (e) {
       // Failed to load saved device
+      setState(() {
+        _connectionStatus = 'Disconnected: Standby';
+      });
     }
   }
 
   // Connect to Bluetooth device
   Future<void> _connectToDevice(BluetoothDevice device) async {
     try {
-      await device.connect(timeout: const Duration(seconds: 15));
+      await device.connect(timeout: const Duration(seconds: 10));
       
       setState(() {
         _connectedDevice = device;
@@ -255,6 +282,30 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _disconnectAndForgetDevice() async {
+    try {
+      // Disconnect device
+      if (_connectedDevice != null) {
+        await _connectedDevice!.disconnect();
+      }
+      
+      // Clear saved device ID
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('connected_device_id');
+      
+      // Update state
+      setState(() {
+        _connectedDevice = null;
+        _connectionStatus = 'Disconnected: Standby';
+      });
+      
+      // TTS feedback
+      await _ttsService.speak('Device disconnected and forgotten');
+    } catch (e) {
+      await _ttsService.speak('Failed to disconnect device');
+    }
+  }
+
   @override
   void dispose() {
     _ttsService.dispose();
@@ -297,6 +348,30 @@ class _HomePageState extends State<HomePage> {
                     )),
                   );
                 },
+                onLongPress: _connectedDevice != null ? () async {
+                  // Long press to disconnect and forget device
+                  final shouldDisconnect = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Disconnect Device'),
+                      content: const Text('Do you want to disconnect and forget this device?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Disconnect'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (shouldDisconnect == true) {
+                    await _disconnectAndForgetDevice();
+                  }
+                } : null,
                 child: Card(
                   color: Colors.grey[900],
                   elevation: 8,
