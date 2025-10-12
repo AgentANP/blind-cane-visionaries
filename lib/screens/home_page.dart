@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../services/tts_service.dart';
 import '../services/location_service.dart';
+import '../services/emergency_service.dart';
 import 'settings_screen.dart';
 import 'navigation_screen.dart';
 import 'bluetooth_screen.dart';
@@ -19,6 +20,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   String _locationStatus = 'Press "Where Am I?" to get your current location.';
   final TtsService _ttsService = TtsService();
+  late final EmergencyService _emergencyService;
   
   // Bluetooth state
   BluetoothDevice? _connectedDevice;
@@ -29,6 +31,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _ttsService.initialize();
+    _emergencyService = EmergencyService(_ttsService);
     _loadSavedDevice();
   }
 
@@ -168,14 +171,25 @@ class _HomePageState extends State<HomePage> {
             // Listen for data from the stick
             characteristic.lastValueStream.listen((value) async {
               if (value.isNotEmpty) {
-                String receivedData = String.fromCharCodes(value);
+                String receivedData = String.fromCharCodes(value).trim();
                 
+                // Handle signal '1' - Where Am I? (get location)
+                if (receivedData == '1') {
+                  await _findLocation();
+                }
+                // Handle signal '2' - Start Navigation
+                else if (receivedData == '2') {
+                  await _ttsService.speak('Opening navigation');
+                  if (mounted) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const NavigationScreen()),
+                    );
+                  }
+                }
                 // Handle SOS button press
-                if (receivedData.toUpperCase().contains('SOS')) {
+                else if (receivedData.toUpperCase().contains('SOS')) {
                   await _handleSOSSignal();
                 }
-                
-                // You can add more signal handlers here for other stick functions
               }
             });
           }
@@ -260,8 +274,11 @@ class _HomePageState extends State<HomePage> {
               ElevatedButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
-                  // TODO: Send SMS/call emergency contacts with location
-                  await _ttsService.speak('Alerting emergency contacts');
+                  await _emergencyService.sendEmergencySMS(
+                    latitude: position.latitude,
+                    longitude: position.longitude,
+                    address: address ?? 'Unknown location',
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
