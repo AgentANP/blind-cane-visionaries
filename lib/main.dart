@@ -925,6 +925,29 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
+    // Check if location services are enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _speak('Location services are disabled. Please enable location services.');
+      return;
+    }
+
+    // Check for location permissions
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _speak('Location permissions are denied. Please grant location permission.');
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      _speak('Location permissions are permanently denied. Please enable them in settings.');
+      return;
+    }
+
+    // Now get the position
     try {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
