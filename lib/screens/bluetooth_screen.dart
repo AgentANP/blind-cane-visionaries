@@ -57,7 +57,6 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   bool _isPotentialStickDevice(ScanResult result) {
     String platformName = result.device.platformName.toLowerCase();
     String advName = result.advertisementData.advName.toLowerCase();
-    String localName = result.advertisementData.localName.toLowerCase();
     
     // Check if any name contains keywords related to the stick
     List<String> stickKeywords = [
@@ -71,8 +70,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     
     for (String keyword in stickKeywords) {
       if (platformName.contains(keyword) || 
-          advName.contains(keyword) || 
-          localName.contains(keyword)) {
+          advName.contains(keyword)) {
         return true;
       }
     }
@@ -142,12 +140,10 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
             if (!_scanResults.any((d) => d.device.remoteId == result.device.remoteId)) {
               String deviceName = result.device.platformName;
               String advertisedName = result.advertisementData.advName;
-              String localName = result.advertisementData.localName;
               
               print('Adding device:');
               print('  Platform Name: $deviceName');
               print('  Advertised Name: $advertisedName');
-              print('  Local Name: $localName');
               print('  Remote ID: ${result.device.remoteId}');
               print('  RSSI: ${result.rssi}');
               
@@ -387,8 +383,6 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                           String deviceName = 'Unknown Device';
                           if (scanResult.advertisementData.advName.isNotEmpty) {
                             deviceName = scanResult.advertisementData.advName;
-                          } else if (scanResult.advertisementData.localName.isNotEmpty) {
-                            deviceName = scanResult.advertisementData.localName;
                           } else if (device.platformName.isNotEmpty) {
                             deviceName = device.platformName;
                           }

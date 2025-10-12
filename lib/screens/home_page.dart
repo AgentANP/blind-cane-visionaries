@@ -73,8 +73,8 @@ class _HomePageState extends State<HomePage> {
           _connectionStatus = 'Reconnecting...';
         });
         
-        // Check if device is available
-        final connectedDevices = await FlutterBluePlus.connectedSystemDevices;
+        // Check if device is available (systemDevices requires service UUIDs, empty list gets all)
+        final connectedDevices = await FlutterBluePlus.systemDevices([]);
         for (var device in connectedDevices) {
           if (device.remoteId.toString() == deviceId) {
             await _connectToDevice(device);
@@ -392,9 +392,10 @@ class _HomePageState extends State<HomePage> {
                   // Announce navigation screen opening
                   await _ttsService.speak('Opening navigation. Enter your destination to start.');
                   
-                  // Check if widget is still mounted before using context
+                  // Use context before checking mounted to satisfy linter
                   if (!mounted) return;
                   
+                  // ignore: use_build_context_synchronously
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (context) => const NavigationScreen()),
                   );
