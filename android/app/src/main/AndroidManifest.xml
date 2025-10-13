@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
     
+    <!-- SMS permissions for emergency alerts -->
+    <uses-permission android:name="android.permission.SEND_SMS"/>
+    <uses-permission android:name="android.permission.READ_SMS"/>
+    
     <!-- Bluetooth permissions for ESP32 connectivity -->
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
@@ -13,7 +17,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     
     <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
+    <uses-feature android:name="android:hardware.bluetooth_le" android:required="false"/>
     <application
         android:label="Smart Stick"
         android:name="${applicationName}"

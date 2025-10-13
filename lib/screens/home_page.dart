@@ -33,6 +33,17 @@ class _HomePageState extends State<HomePage> {
     _ttsService.initialize();
     _emergencyService = EmergencyService(_ttsService);
     _loadSavedDevice();
+    _requestSmsPermission();
+  }
+
+  // Request SMS permission
+  Future<void> _requestSmsPermission() async {
+    try {
+      // Permission will be requested when trying to send SMS
+      // flutter_sms handles this automatically
+    } catch (e) {
+      // Permission handling error
+    }
   }
 
   Future<void> _findLocation() async {
@@ -274,7 +285,8 @@ class _HomePageState extends State<HomePage> {
               ElevatedButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
-                  await _emergencyService.sendEmergencySMS(
+                  // Try direct SMS first (no dialog), falls back to SMS app if it fails
+                  await _emergencyService.sendEmergencySMSDirect(
                     latitude: position.latitude,
                     longitude: position.longitude,
                     address: address ?? 'Unknown location',
