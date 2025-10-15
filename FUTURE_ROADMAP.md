@@ -27,7 +27,6 @@
   - Safer navigation (no screen interaction while walking)
   - More intuitive for visually impaired users
 
-**Implementation Timeline:** Phase 2 (Q1 2026)
 
 ---
 
@@ -50,7 +49,6 @@
   - TTS announcements for mode transitions
   - Persistent notification showing current mode
 
-**Implementation Timeline:** Phase 2 (Q2 2026)
 
 ---
 
@@ -79,8 +77,6 @@
   - Two-factor authentication
   - Emergency access for caregivers
   - Privacy controls
-
-**Implementation Timeline:** Phase 3 (Q3 2026)
 
 ---
 
@@ -303,12 +299,12 @@ The Smart Blind Stick project represents a significant step toward enhancing ind
 3. **Reducing smartphone dependency** with integrated audio systems
 4. **Building a connected ecosystem** through synchronized accounts
 
-We envision a future where assistive technology is not just functional, but empowering—giving users the confidence to navigate the world independently and safely.
 
 ---
 
-**Project Team:** Blind Cane Visionaries  
-**Last Updated:** October 15, 2025  
+**Project Team:** Visionaries
+**Date of Upload:** October 15, 2025  
 **Version:** 1.0  
 
 For more information or collaboration inquiries, please refer to the main repository documentation.
+
