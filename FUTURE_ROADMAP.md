@@ -87,10 +87,6 @@
 - Works without internet connectivity
 - Essential for areas with poor network coverage
 
-#### AI-Powered Obstacle Prediction
-- Machine learning integration with stick sensors
-- Predict obstacles based on sensor patterns
-- Proactive voice warnings
 
 #### Community Features
 - Share safe routes with other users
@@ -307,4 +303,5 @@ The Smart Blind Stick project represents a significant step toward enhancing ind
 **Version:** 1.0  
 
 For more information or collaboration inquiries, please refer to the main repository documentation.
+
 
