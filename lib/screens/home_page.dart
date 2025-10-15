@@ -131,7 +131,10 @@ class _HomePageState extends State<HomePage> {
   // Connect to Bluetooth device
   Future<void> _connectToDevice(BluetoothDevice device) async {
     try {
-      await device.connect(timeout: const Duration(seconds: 10));
+      await device.connect(
+        timeout: const Duration(seconds: 10),
+        autoConnect: false, // Disable auto-reconnect to prevent reconnection issues
+      );
       
       setState(() {
         _connectedDevice = device;
@@ -213,102 +216,116 @@ class _HomePageState extends State<HomePage> {
 
   // Handle SOS signal from the stick
   Future<void> _handleSOSSignal() async {
-    // Announce emergency
-    await _ttsService.speak('Emergency SOS button pressed on stick');
+    // Announce emergency immediately
+    _ttsService.speak('Emergency SOS activated. Getting your location.');
     
-    // Get current location
-    try {
-      Position? position = await LocationService.getCurrentPosition();
-      
-      if (position == null) {
-        await _ttsService.speak('Emergency signal received but location unavailable');
-        return;
-      }
-      
-      String? address = await LocationService.getAddressFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-      
-      address = address ?? 'Unknown location';
-      
-      // Show emergency dialog
-      if (!mounted) return;
-      
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            backgroundColor: Colors.red[900],
-            title: const Row(
-              children: [
-                Icon(Icons.warning, color: Colors.white, size: 32),
-                SizedBox(width: 12),
-                Text('EMERGENCY SOS', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'SOS button pressed on Smart Stick!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+    // Show dialog immediately with loading state
+    if (!mounted) return;
+    
+    // Variables to hold location data
+    Position? position;
+    String address = 'Getting location...';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Fetch location in background
+            if (position == null) {
+              LocationService.getCurrentPosition().then((pos) {
+                if (pos != null) {
+                  position = pos;
+                  LocationService.getAddressFromCoordinates(
+                    pos.latitude,
+                    pos.longitude,
+                  ).then((addr) {
+                    setDialogState(() {
+                      address = addr ?? 'Unknown location';
+                    });
+                  });
+                  setDialogState(() {});
+                } else {
+                  setDialogState(() {
+                    address = 'Location unavailable';
+                  });
+                }
+              });
+            }
+            
+            return AlertDialog(
+              backgroundColor: Colors.red[900],
+              title: const Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.white, size: 32),
+                  SizedBox(width: 12),
+                  Text('EMERGENCY SOS', style: TextStyle(color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SOS button pressed on Smart Stick!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Location: $address',
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  if (position != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Coordinates: ${position!.latitude.toStringAsFixed(6)}, ${position!.longitude.toStringAsFixed(6)}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    const CircularProgressIndicator(color: Colors.white),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text(
+                    'I\'m Safe',
+                    style: TextStyle(color: Colors.white, fontSize: 18),
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Location: $address',
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Coordinates: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ElevatedButton(
+                  onPressed: position != null ? () async {
+                    Navigator.of(context).pop();
+                    await _emergencyService.sendEmergencySMSDirect(
+                      latitude: position!.latitude,
+                      longitude: position!.longitude,
+                      address: address,
+                    );
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.red[900],
+                  ),
+                  child: const Text(
+                    'Alert Contacts',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text(
-                  'I\'m Safe',
-                  style: TextStyle(color: Colors.white, fontSize: 18),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  // Try direct SMS first (no dialog), falls back to SMS app if it fails
-                  await _emergencyService.sendEmergencySMSDirect(
-                    latitude: position.latitude,
-                    longitude: position.longitude,
-                    address: address ?? 'Unknown location',
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.red[900],
-                ),
-                child: const Text(
-                  'Alert Contacts',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    } catch (e) {
-      // Failed to get location for SOS
-      await _ttsService.speak('Emergency signal received but location unavailable');
-    }
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _disconnectAndForgetDevice() async {

@@ -36,14 +36,27 @@ class LocationService {
     return LocationPermissionResult(isGranted: true);
   }
 
-  // Get current position
+  // Get current position with timeout
   static Future<Position?> getCurrentPosition() async {
     try {
       print('Fetching current position...');
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.medium, // Changed from high to medium for faster response
+          timeLimit: Duration(seconds: 5), // Add 5 second timeout
         ),
+      ).timeout(
+        const Duration(seconds: 6), // Overall timeout
+        onTimeout: () async {
+          // If timeout, try to get last known position
+          print('Position timeout, getting last known location...');
+          Position? lastPosition = await Geolocator.getLastKnownPosition();
+          if (lastPosition != null) {
+            print('Using last known position: ${lastPosition.latitude}, ${lastPosition.longitude}');
+            return lastPosition;
+          }
+          throw Exception('Location timeout');
+        },
       );
       print('Position fetched: ${position.latitude}, ${position.longitude}');
       return position;
