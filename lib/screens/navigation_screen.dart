@@ -12,7 +12,9 @@ import '../services/tts_service.dart';
 import '../services/location_service.dart';
 
 class NavigationScreen extends StatefulWidget {
-  const NavigationScreen({super.key});
+  final Position? initialPosition;
+  
+  const NavigationScreen({super.key, this.initialPosition});
 
   @override
   State<NavigationScreen> createState() => _NavigationScreenState();
@@ -39,7 +41,31 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void initState() {
     super.initState();
     _initializeTts();
-    _getCurrentLocation();
+    
+    // Use passed position if available, otherwise fetch it
+    if (widget.initialPosition != null) {
+      _currentPosition = widget.initialPosition;
+      _addCurrentLocationMarker();
+    } else {
+      _getCurrentLocation();
+    }
+  }
+
+  void _addCurrentLocationMarker() {
+    if (_currentPosition != null) {
+      setState(() {
+        _markers.add(
+          Marker(
+            markerId: const MarkerId('currentLocation'),
+            position: LatLng(
+              _currentPosition!.latitude,
+              _currentPosition!.longitude,
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          ),
+        );
+      });
+    }
   }
 
   Future<void> _initializeTts() async {
@@ -66,17 +92,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
     if (position != null) {
       setState(() {
         _currentPosition = position;
-        _markers.add(
-          Marker(
-            markerId: const MarkerId('currentLocation'),
-            position: LatLng(
-              _currentPosition!.latitude,
-              _currentPosition!.longitude,
-            ),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          ),
-        );
       });
+      _addCurrentLocationMarker();
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

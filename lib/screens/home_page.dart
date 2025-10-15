@@ -194,9 +194,15 @@ class _HomePageState extends State<HomePage> {
                 // Handle signal '2' - Start Navigation
                 else if (receivedData == '2') {
                   await _ttsService.speak('Opening navigation');
+                  
+                  // Fetch location in background before opening navigation screen
+                  final position = await LocationService.getCurrentPosition();
+                  
                   if (mounted) {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const NavigationScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => NavigationScreen(initialPosition: position),
+                      ),
                     );
                   }
                 }
@@ -256,11 +262,17 @@ class _HomePageState extends State<HomePage> {
             
             return AlertDialog(
               backgroundColor: Colors.red[900],
-              title: const Row(
-                children: [
+              title: Row(
+                children: const [
                   Icon(Icons.warning, color: Colors.white, size: 32),
                   SizedBox(width: 12),
-                  Text('EMERGENCY SOS', style: TextStyle(color: Colors.white)),
+                  Flexible(
+                    child: Text(
+                      'EMERGENCY SOS',
+                      style: TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               content: Column(
@@ -513,12 +525,17 @@ class _HomePageState extends State<HomePage> {
                   // Announce navigation screen opening
                   await _ttsService.speak('Opening navigation. Enter your destination to start.');
                   
+                  // Fetch location before opening navigation screen
+                  final position = await LocationService.getCurrentPosition();
+                  
                   // Use context before checking mounted to satisfy linter
                   if (!mounted) return;
                   
                   // ignore: use_build_context_synchronously
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const NavigationScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => NavigationScreen(initialPosition: position),
+                    ),
                   );
                 },
                 style: OutlinedButton.styleFrom(
